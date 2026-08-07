@@ -1,0 +1,30 @@
+# ---- macOS / IDE ----
+.DS_Store
+.idea/
+*.iml
+
+# ---- Java / Maven ----
+target/
+
+# ---- 機密：絕不進 git ----
+aws.env
+.env
+*.pem
+*_accessKeys.csv
+*_credentials.csv
+
+# ---- Terraform ----
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.tfstate.lock.info
+*.tfvars
+*.tfvars.json
+crash.log
+crash.*.log
+
+# ---- 本機殘檔 / build 產物 ----
+data/
+*.mv.db
+*.trace.db
+lambda/**/function.zip

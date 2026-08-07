@@ -1,0 +1,12 @@
+# Terraform state（★ 含資源明細、可能含敏感資料——絕不進 git）
+*.tfstate
+*.tfstate.*
+# provider 外掛與快取
+.terraform/
+.terraform.tfstate.lock.info
+# 變數檔（可能含機密）
+*.tfvars
+*.tfvars.json
+# crash log
+crash.log
+crash.*.log

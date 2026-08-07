@@ -1,0 +1,25 @@
+# build 產物（會在 image 內重新 build，別把本機舊 jar 帶進 context）
+target/
+
+# IDE / 編輯器
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Maven wrapper（build 階段用 base image 自帶的 mvn，不需要 wrapper）
+.mvn/
+mvnw
+mvnw.cmd
+
+# 文件 & 本機 H2 殘檔（runtime 用不到）
+*.md
+data/
+
+# git
+.git
+.gitignore
+.gitattributes
+# secrets — 絕不進 build context / image
+aws.env
+.env

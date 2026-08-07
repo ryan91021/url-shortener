@@ -1,0 +1,19 @@
+spring:
+  application:
+    name: url-shortener
+  devtools:
+    restart:
+      enabled: false
+
+aws:
+  region: ap-east-2
+  dynamodb:
+    table-name: UrlMappings
+
+server:
+  port: 8080
+
+logging:
+  level:
+    software.amazon.awssdk: info
+    com.urlshort.shortener: debug

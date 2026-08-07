@@ -1,0 +1,43 @@
+spring:
+  application:
+    name: url-shortener
+
+  devtools:
+    restart:
+      enabled: false
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+aws:
+  region: ap-east-2
+  dynamodb:
+    table-name: UrlMappings
+    analytics-table-name: ClickAnalytics
+  sqs:
+    click-queue-name: url-click-events   # 生產者用 GetQueueUrl 由 name 解析出 URL
+
+server:
+  port: 8080
+
+logging:
+  level:
+    software.amazon.awssdk: info
+    com.urlshort.shortener: debug
+  pattern:
+    level: "%5p [requestId=%X{requestId:-}]"
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health          # 只對外露出 /actuator/health（最小暴露面）
+  endpoint:
+    health:
+      show-details: never        # 只回 {"status":"UP"}，不洩漏內部元件細節
+  health:
+    redis:
+      enabled: false             # ★★ 關掉 Redis 健康檢查：今天容器內 redis host 仍是 localhost
+      #    （Day 20 才注入 ElastiCache endpoint），不關 → health DOWN → 503

@@ -1,0 +1,20 @@
+# 不用寫 version:（Compose v2 已視為 obsolete，寫了會跳 warning）
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: shortener-redis
+    ports:
+      - "6379:6379"            # publish 給宿主機，方便用本機 redis-cli 對照（app↔redis 走內網不靠這個）
+
+  app:
+    build: .                   # 用同層的 Day 14 Dockerfile（多階段 build）
+    image: url-shortener:compose
+    container_name: shortener-app
+    depends_on:
+      - redis                  # 確保 redis 容器先啟動（注意：只等「啟動」不等「ready」）
+    ports:
+      - "8080:8080"            # host:container
+    environment:
+      SPRING_DATA_REDIS_HOST: redis   # ★ 走 compose 網路、用 service 名直連 redis 容器
+    env_file:
+      - aws.env                # ★ 注入 AWS 金鑰（DefaultCredentialsProvider 走環境變數鏈撿到）
