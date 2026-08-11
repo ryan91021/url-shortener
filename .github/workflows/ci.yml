@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    name: Build & Test (Java 17)
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: shortener      # ★ Maven 專案在 repo 的 shortener/ 子目錄（卡點 15）
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'                  # ★ 快取 ~/.m2/repository（key 綁 pom.xml 的 hash）
+
+      - name: Run tests
+        run: ./mvnw -B test               # ★ 用 wrapper：CI 跑的 Maven 版本 = 你本機的版本

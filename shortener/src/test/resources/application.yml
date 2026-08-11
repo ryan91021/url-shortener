@@ -9,6 +9,14 @@ aws:
   region: ap-east-2
   dynamodb:
     table-name: UrlMappings
+    analytics-table-name: ClickAnalytics    # ★ 新增：AnalyticsService 的 @Value 需要它
+  sqs:
+    click-queue-name: url-click-events      # ★ 新增：ClickEventPublisher 的 @Value 需要它
+
+app:
+  security:
+    api-key-source: property                # ★★ 測試不碰 AWS：金鑰走本機屬性
+    api-key: test-api-key-do-not-use-in-prod
 
 server:
   port: 8080

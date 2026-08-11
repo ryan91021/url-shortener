@@ -25,7 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 @SpringBootTest
 @AutoConfigureMockMvc
-class UrlControllerIntegrationTest {
+class UrlControllerIT{
 
     @Autowired
     private MockMvc mockMvc;
@@ -43,6 +43,7 @@ class UrlControllerIntegrationTest {
                 """;
 
         mockMvc.perform(post("/api/v1/shorten")
+                        .header("X-API-Key", "test-api-key-do-not-use-in-prod")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isCreated())
@@ -57,6 +58,7 @@ class UrlControllerIntegrationTest {
                 {"longUrl":"https://httpbin.org/get"}
                 """;
         MvcResult created = mockMvc.perform(post("/api/v1/shorten")
+                        .header("X-API-Key", "test-api-key-do-not-use-in-prod")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andReturn();
@@ -96,6 +98,7 @@ class UrlControllerIntegrationTest {
                 """;
 
         mockMvc.perform(post("/api/v1/shorten")
+                        .header("X-API-Key", "test-api-key-do-not-use-in-prod")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest())

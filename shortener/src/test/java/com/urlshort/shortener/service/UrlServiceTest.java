@@ -36,6 +36,9 @@ class UrlServiceTest {
     @Mock
     private ValueOperations<String, String> valueOperations;
 
+    @Mock
+    private MetricPublisher metricPublisher;     // ★ 新增：不加 → @InjectMocks 塞 null → NPE
+
     @InjectMocks
     private UrlService urlService;
 

@@ -41,3 +41,8 @@ management:
     redis:
       enabled: false             # ★★ 關掉 Redis 健康檢查：今天容器內 redis host 仍是 localhost
       #    （Day 20 才注入 ElastiCache endpoint），不關 → health DOWN → 503
+
+app:
+  security:
+    api-key-source: aws-secrets          # aws-secrets（正式）| property（本機/測試）
+    secret-name: url-shortener/api-key   # ★ 只是「名字」，不是機密——可以進 git

@@ -53,6 +53,19 @@ data "aws_iam_policy_document" "ecs_task_least_privilege" {
       values   = ["UrlShortener"] # = MetricPublisher.NAMESPACE
     }
   }
+
+  # ⑤ Day 29：只准讀【這一個】secret 的值
+  #    ★ 連 secretsmanager:ListSecrets / DescribeSecret 都不給——容器只需要「拿值」這一個動作
+  statement {
+    sid       = "ReadApiKeySecret"
+    effect    = "Allow"
+    actions   = ["secretsmanager:GetSecretValue"]
+    resources = [aws_secretsmanager_secret.api_key.arn] # ★ 參照，不硬寫 ARN（承 Day 28 紀律）
+  }
+  # ★ KMS 註記：這個 secret 用預設的 AWS 受管金鑰 aws/secretsmanager，
+  #   該金鑰的 key policy 已透過 kms:ViaService 授權給本帳號主體 → 這裡【不需要】另外給 kms:Decrypt。
+  #   若哪天改用自管的 CMK，就【必須】再加一條 kms:Decrypt 到那把 key 的 ARN（卡點 21）。
+
 }
 
 resource "aws_iam_policy" "ecs_task_least_privilege" {
@@ -65,3 +78,4 @@ resource "aws_iam_role_policy_attachment" "ecs_task_least_privilege" {
   role       = data.aws_iam_role.ecs_task.name
   policy_arn = aws_iam_policy.ecs_task_least_privilege.arn
 }
+
