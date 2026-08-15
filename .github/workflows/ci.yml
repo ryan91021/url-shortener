@@ -6,14 +6,33 @@ on:
   pull_request:
     branches: [ main ]
 
+# ★ GITHUB_TOKEN 只給讀取權（最小權限也適用於 CI 自己的 token）
+permissions:
+  contents: read
+
+# ★ 同一個 branch 的部署排隊執行，不要兩個 deploy 同時打 ECS
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ap-east-2
+  ECR_REPOSITORY: url-shortener
+  ECS_CLUSTER: url-shortener-cluster
+  ECS_SERVICE: url-shortener-service
+  TASK_FAMILY: url-shortener-task
+
 jobs:
+  # ─────────────────────────────────────────────
+  # Day 29 的 job：完全不需要 AWS 憑證
+  # ─────────────────────────────────────────────
   test:
     name: Build & Test (Java 17)
     runs-on: ubuntu-latest
 
     defaults:
       run:
-        working-directory: shortener      # ★ Maven 專案在 repo 的 shortener/ 子目錄（卡點 15）
+        working-directory: shortener      # ★ Maven 專案在 repo 的 shortener/ 子目錄
 
     steps:
       - name: Checkout
@@ -24,7 +43,94 @@ jobs:
         with:
           java-version: '17'
           distribution: 'temurin'
-          cache: 'maven'                  # ★ 快取 ~/.m2/repository（key 綁 pom.xml 的 hash）
+          cache: 'maven'
 
       - name: Run tests
-        run: ./mvnw -B test               # ★ 用 wrapper：CI 跑的 Maven 版本 = 你本機的版本
+        run: ./mvnw -B test
+
+  # ─────────────────────────────────────────────
+  # Day 30 新增：只有「main 分支的 push」+「測試綠」才會跑
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy to ECS
+    runs-on: ubuntu-latest
+    needs: test                                                    # ★ 測試紅就不部署
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'   # ★ PR 不部署
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ★ 長期金鑰版。production 應改用 GitHub OIDC（見 README / 選做 A）
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region:            ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: ecr                       # ★ 用它的 outputs.registry，避免把 Account ID 寫進 git
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          # ★ 用 commit SHA 當 tag：不可變、可追溯。
+          #   任何時候都能回答「線上跑的是哪一個 commit」——vN 這種手動流水號答不出來。
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="$REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+          # ★ runner 本來就是 x86_64、Fargate 也是 X86_64 → 不需要 --platform
+          #   （Day 22 那個 arm64 build 上雲報 exec format error 的坑，在 CI 裡自然消失）
+          docker build -t "$IMAGE_URI" ./shortener
+          docker push "$IMAGE_URI"
+          echo "uri=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      # ★★ 核心：註冊一個【新的 task definition revision】，只換 image。
+      #    不能只 push image + --force-new-deployment ——因為 :6 釘死在 :v5，
+      #    force 只會把舊 image 再拉一次（卡點 5）。
+      - name: Register new task definition revision
+        id: taskdef
+        env:
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "$TASK_FAMILY" \
+            --query taskDefinition > current-td.json
+
+          # 只改 image，並刪掉 register-task-definition 不接受的唯讀欄位
+          jq --arg IMAGE "$IMAGE_URI" '
+            .containerDefinitions[0].image = $IMAGE
+            | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                  .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)
+          ' current-td.json > new-td.json
+
+          REVISION=$(aws ecs register-task-definition \
+            --cli-input-json file://new-td.json \
+            --query 'taskDefinition.revision' --output text)
+          echo "revision=$REVISION" >> "$GITHUB_OUTPUT"
+          echo "registered $TASK_FAMILY:$REVISION"
+
+      - name: Update ECS service
+        env:
+          REVISION: ${{ steps.taskdef.outputs.revision }}
+        run: |
+          # ★ 換 task definition 本身就會觸發新的 deployment，不需要 --force-new-deployment。
+          # ★ 刻意【不碰 --desired-count】：容量是成本決策，不該由每次 push 決定（卡點 8）。
+          aws ecs update-service \
+            --cluster "$ECS_CLUSTER" \
+            --service "$ECS_SERVICE" \
+            --task-definition "$TASK_FAMILY:$REVISION" \
+            --query 'service.{service:serviceName,taskDef:taskDefinition,desired:desiredCount}' \
+            --output table
+
+      - name: Wait for service to stabilise
+        run: |
+          # ★ desired-count = 0 時這一步會立刻回來（沒有 task 要等）。
+          #   等真的有流量、desired > 0 時，它才是「部署成功」的證明。
+          aws ecs wait services-stable \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE"
+          echo "service is stable"

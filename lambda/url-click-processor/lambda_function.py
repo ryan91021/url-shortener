@@ -57,9 +57,22 @@ def lambda_handler(event, context):
             print(f"aggregated click shortCode={short_code} date={date} messageId={message_id}")
 
         except Exception as e:
-            # ★ partial batch：只把「這一則」標記失敗 → 只有它會重投，同批成功的不受影響
-            print(f"FAILED messageId={message_id} err={e}")
-            batch_item_failures.append({"itemIdentifier": message_id})
+                    # ★ partial batch：只把「這一則」標記失敗 → 只有它會重投，同批成功的不受影響
+                    print(f"FAILED messageId={message_id} err={e}")
+
+                    # ★★ Day 30 新增：補償刪除（compensating action）
+                    #    claim 是「我要開始處理它」的宣告，不是「我處理完了」的證明。
+                    #    處理失敗就必須把 claim 收回，否則下一次重投會被自己的 claim 擋成「重複」，
+                    #    然後被當成成功刪掉 —— 壞訊息就再也到不了 DLQ（Day 30 實測過）。
+                    try:
+                        dedup_table.delete_item(Key={"messageId": message_id})
+                        print(f"released dedup claim messageId={message_id}")
+                    except Exception as de:
+                        # ★ 這裡【不能】再往外拋：補償失敗也只是退化回原本的行為，
+                        #   不該讓它蓋掉真正的失敗原因。記 log 就好。
+                        print(f"WARN failed to release dedup claim messageId={message_id} err={de}")
+
+                    batch_item_failures.append({"itemIdentifier": message_id})
 
     duration_ms = (time.time() - start) * 1000.0
     cloudwatch.put_metric_data(
