@@ -36,3 +36,34 @@ resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   alarm_actions = [aws_sns_topic.ops_alerts.arn] # 進 ALARM 時寄信
   ok_actions    = [aws_sns_topic.ops_alerts.arn] # 恢復 OK 時也寄一封（知道「已排除」）
 }
+
+
+# ──────────────────────────────────────────────────────────────
+# Day 31 · 一頁式營運儀表板
+#   ★ ALB / Target group 【不在】Terraform 裡（Day 26 的減載決定：舊資源不回頭補），
+#     所以不能用資源參照。改用 data source 去 AWS「查」它現在的樣子 ——
+#     這樣拿到的 arn_suffix 永遠是現實的值，不是我手抄進檔案的字串。
+#   （Day 28 的 data.aws_iam_role.ecs_task 是同一招）
+# ──────────────────────────────────────────────────────────────
+data "aws_lb" "app" {
+  name = "url-shortener-alb"
+}
+
+data "aws_lb_target_group" "app" {
+  name = "url-shortener-tg"
+}
+
+resource "aws_cloudwatch_dashboard" "overview" {
+  dashboard_name = "url-shortener-overview"
+
+  # ★ templatefile() = 讀檔 + 把 ${...} 換掉。
+  #   用 file() 也可以，但那樣就得把 ALB 的雜湊字尾硬寫進 JSON（見下方決策表）。
+  dashboard_body = templatefile("${path.module}/dashboard.json", {
+    region = "ap-east-2" # ★ 跟 provider.tf 一致；dashboard 是全域的，但 metric 有 region
+
+    # ★★ arn_suffix 正好就是 CloudWatch 維度要的格式：
+    #    app/url-shortener-alb/6fb50f…  /  targetgroup/url-shortener-tg/c883c…
+    alb_suffix = data.aws_lb.app.arn_suffix
+    tg_suffix  = data.aws_lb_target_group.app.arn_suffix
+  })
+}

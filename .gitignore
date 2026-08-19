@@ -28,3 +28,4 @@ data/
 *.mv.db
 *.trace.db
 lambda/**/function.zip
+backup/

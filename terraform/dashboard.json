@@ -1,0 +1,140 @@
+{
+  "start": "-PT3H",
+  "widgets": [
+    {
+      "type": "metric",
+      "x": 0, "y": 0, "width": 12, "height": 6,
+      "properties": {
+        "title": "① ALB · 流量與錯誤（每分鐘）",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "stat": "Sum",
+        "metrics": [
+          ["AWS/ApplicationELB", "RequestCount",             "LoadBalancer", "${alb_suffix}", { "label": "RequestCount" }],
+          ["AWS/ApplicationELB", "HTTPCode_Target_2XX_Count", "LoadBalancer", "${alb_suffix}", { "label": "2xx（建立短碼）" }],
+          ["AWS/ApplicationELB", "HTTPCode_Target_3XX_Count", "LoadBalancer", "${alb_suffix}", { "label": "3xx（redirect 302）" }],
+          ["AWS/ApplicationELB", "HTTPCode_Target_4XX_Count", "LoadBalancer", "${alb_suffix}", { "label": "4xx（含 401 / 404）" }],
+          ["AWS/ApplicationELB", "HTTPCode_Target_5XX_Count", "LoadBalancer", "${alb_suffix}", { "label": "5xx（應用程式炸了）" }],
+          ["AWS/ApplicationELB", "HTTPCode_ELB_5XX_Count",    "LoadBalancer", "${alb_suffix}", { "label": "5xx（ALB 自己回的）" }]
+        ],
+        "yAxis": { "left": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 0, "width": 12, "height": 6,
+      "properties": {
+        "title": "② ALB · 目標回應時間 p50 / p95 / p99（單位：秒）",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "metrics": [
+          ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${alb_suffix}", { "stat": "p50", "label": "p50" }],
+          ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${alb_suffix}", { "stat": "p95", "label": "p95" }],
+          ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${alb_suffix}", { "stat": "p99", "label": "p99" }],
+          ["AWS/ApplicationELB", "TargetResponseTime", "LoadBalancer", "${alb_suffix}", { "stat": "Average", "label": "平均（★ 只是參考）" }]
+        ],
+        "yAxis": { "left": { "min": 0 } },
+        "annotations": {
+          "horizontal": [
+            { "label": "p95 目標 500ms", "value": 0.5 }
+          ]
+        }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 6, "width": 8, "height": 6,
+      "properties": {
+        "title": "③ ECS · CPU / 記憶體 / 活著的 task",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "stat": "Average",
+        "metrics": [
+          ["AWS/ECS", "CPUUtilization",    "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "CPU %" }],
+          ["AWS/ECS", "MemoryUtilization", "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "Mem %" }],
+          ["AWS/ECS", "LiveTaskCount",     "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "task 數", "yAxis": "right" }]
+        ],
+        "yAxis": { "left": { "min": 0, "max": 100 }, "right": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 8, "y": 6, "width": 8, "height": 6,
+      "properties": {
+        "title": "④ DynamoDB · 用量與延遲",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "metrics": [
+          ["AWS/DynamoDB", "ConsumedReadCapacityUnits",  "TableName", "UrlMappings",    { "stat": "Sum", "label": "UrlMappings 讀 RCU" }],
+          ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "UrlMappings",    { "stat": "Sum", "label": "UrlMappings 寫 WCU" }],
+          ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", "ClickAnalytics", { "stat": "Sum", "label": "ClickAnalytics 寫 WCU" }],
+          ["AWS/DynamoDB", "ReadThrottleEvents",         "TableName", "UrlMappings",    { "stat": "Sum", "label": "★ 讀被限流" }],
+          ["AWS/DynamoDB", "WriteThrottleEvents",        "TableName", "UrlMappings",    { "stat": "Sum", "label": "★ 寫被限流" }],
+          ["AWS/DynamoDB", "SuccessfulRequestLatency",   "TableName", "UrlMappings", "Operation", "GetItem", { "stat": "Average", "label": "GetItem 延遲(ms)", "yAxis": "right" }]
+        ],
+        "yAxis": { "left": { "min": 0 }, "right": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 16, "y": 6, "width": 8, "height": 6,
+      "properties": {
+        "title": "⑤ SQS · 佇列深度 / DLQ / 最舊訊息年齡",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "stat": "Maximum",
+        "metrics": [
+          ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "url-click-events",     { "label": "來源佇列深度" }],
+          ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "url-click-events-dlq", { "label": "★ DLQ 深度（>0 就有事）" }],
+          ["AWS/SQS", "ApproximateAgeOfOldestMessage",      "QueueName", "url-click-events",     { "label": "最舊訊息年齡(秒)", "yAxis": "right" }]
+        ],
+        "yAxis": { "left": { "min": 0 }, "right": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 0, "y": 12, "width": 12, "height": 6,
+      "properties": {
+        "title": "⑥ 快取命中率（自訂 metric · 由容器發送）",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "metrics": [
+          ["UrlShortener", "CacheHit", { "stat": "Average",     "label": "命中率（0–1）" }],
+          ["UrlShortener", "CacheHit", { "stat": "SampleCount", "label": "GET 次數", "yAxis": "right" }]
+        ],
+        "yAxis": { "left": { "min": 0, "max": 1 }, "right": { "min": 0 } }
+      }
+    },
+    {
+      "type": "metric",
+      "x": 12, "y": 12, "width": 12, "height": 6,
+      "properties": {
+        "title": "⑦ Lambda 消費者 · 呼叫 / 錯誤 / 處理時間",
+        "view": "timeSeries",
+        "stacked": false,
+        "region": "${region}",
+        "period": 60,
+        "metrics": [
+          ["AWS/Lambda", "Invocations", "FunctionName", "url-click-processor", { "stat": "Sum", "label": "呼叫次數" }],
+          ["AWS/Lambda", "Errors",      "FunctionName", "url-click-processor", { "stat": "Sum", "label": "★ 錯誤數" }],
+          ["AWS/Lambda", "Throttles",   "FunctionName", "url-click-processor", { "stat": "Sum", "label": "★ 被節流" }],
+          ["AWS/Lambda", "Duration",    "FunctionName", "url-click-processor", { "stat": "Average", "label": "Lambda 耗時(ms)", "yAxis": "right" }],
+          ["UrlShortener", "ClickEventProcessingDuration", { "stat": "Average", "label": "自訂：批次處理耗時(ms)", "yAxis": "right" }]
+        ],
+        "yAxis": { "left": { "min": 0 }, "right": { "min": 0 } }
+      }
+    }
+  ]
+}
