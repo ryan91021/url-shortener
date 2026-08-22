@@ -31,6 +31,11 @@ export const options = {
         // ⚠️ 單位是【毫秒】—— CloudWatch 的 TargetResponseTime 是【秒】，兩邊差 1000 倍
         http_req_duration: ['p(95)<500', 'p(99)<1000'],
         http_req_failed: ['rate<0.01'],         // ★ k6 預設把 200–399 當成功 ⇒ 302 / 201 都算過
+
+        // ★★ Day 33 新增：讓摘要【分開】印出讀路徑與寫路徑的百分位
+        //    （只影響「怎麼report」，不影響「打出去什麼流量」——所以兩輪仍然是同一把尺）
+        'http_req_duration{name:GET /api/v1/{code}}':   ['p(95)<500'],
+        'http_req_duration{name:POST /api/v1/shorten}': ['p(95)<800'],
     },
 };
 
@@ -40,7 +45,16 @@ const ALB_DNS = RAW.startsWith('http') ? RAW : `http://${RAW}`;
 
 // ★ 用真實存在的短碼（用 aws dynamodb scan 查出來的，不要手打）
 const shortCodes = [
-    'q6w83nb', 'qm90t53', 'qspq70c',
+    'q6w83nb',
+    'qm90t53',
+    'qspq70c',
+    'rrrtxm4',
+    '9fd6noh',
+    'x5l1h6j',
+    'ivu46b2',
+    '25esld0',
+    'am6vckv',
+    '1mtdm5m',
     // …把 2.2 ③ 查出來的另外 7 個貼進來…
 ];
 
