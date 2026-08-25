@@ -299,11 +299,23 @@ filter @message like /published click event/
 - **Day 34 warm：18,059 次 POST → 1 筆**碰撞（期望值 **0.0021** ⇒ **實測 ≈ 期望的 480 倍**）。
 - 今天無害（3 次 retry 全部第一次就成功，0 個失敗請求），寫入量再大一個數量級會出現「三次都撞」→ 500。
 
-**4. 量測基礎設施的三個缺口**
-- dashboard **沒有 `ApproximateAgeOfOldestMessage`** ⇒ Day 33 那 581 秒、Day 34 那 125 秒**在 dashboard 上都是隱形的**
-- dashboard **沒有 ElastiCache** ⇒ 排除 Redis 只能靠 CLI
-- ★ **dashboard 沒有 ECS `CPUUtilization` 的 Maximum**（只有 Average）⇒ cold 那輪「五分鐘全程 100%」在 Average 上只看到 63–90%，**看起來像還有餘裕，其實已經滿了**
+**4. 量測基礎設施的缺口（★ Day 35 更正）**
 
+> ⚠️ **更正**：本節原本寫「dashboard 沒有 `ApproximateAgeOfOldestMessage`」——**這是錯的**。
+> 它從 Day 31（commit `5e557bf`）起就在 `terraform/dashboard.json:99`，是 widget ⑤ 的第 3 條
+> metric（`yAxis: right`、`stat: Maximum`），而且線上 dashboard 實測也有
+> （`aws cloudwatch get-dashboard … | grep -c ApproximateAgeOfOldestMessage` → 1）。
+> ⇒ Day 33 那 581 秒、Day 34 那 125 秒**在 dashboard 上是看得到的**。
+> ★ 真正的問題不是「看不到」，是**沒有人在看**——見下面的 (a)。
+
+- **(a) 🚨 沒有任何一個 alarm 盯著積壓。** 實測 `describe-alarms`：**全帳號只有 1 個 alarm**
+  （`url-click-events-dlq-not-empty`）。⇒ 佇列堆到 65,090 則、最舊訊息落後 581 秒，
+  **沒有任何人會被通知**。★ **「有圖表」和「有告警」是兩件事：圖表要人去看，告警會來找人。**
+- **(b) dashboard 沒有 ElastiCache** ⇒ 排除 Redis 只能靠 CLI（Day 33 選做 B → Day 34 選做 C，仍未做）
+- **(c) dashboard 沒有 ECS `CPUUtilization` 的 Maximum**（widget ③ 的 `stat` 是 `Average`）
+  ⇒ Day 34 cold 那輪「五分鐘全程 100%」在 Average 上只看到 63–90%，**看起來像還有餘裕，其實已經滿了**
+
+  
 **5. 量測衛生：Day 33 §5 的兩條待辦，一條沒做、一條做了**
 - ❌ **`maxVUs` 200 → ≥300 沒做**（`load-test/baseline.js` 未修改，仍是 `maxVUs: 200`）。cold 那輪因此打到天花板 → **`dropped_iterations = 17,061`（28.4%）、只達成 178.6 RPS**。⇒ **cold 那輪的延遲數字嚴重偏樂觀，不能拿來當 baseline。**
 - ✅ **暖機提前做了**：15:18–15:21Z 先跑了 10,001 筆，15:24:39Z 才正式開跑 ⇒ warm 那輪的 ALB `RequestCount` **59,901 ＝ k6 `http_reqs` 59,901**，**一筆雜訊都沒有**。

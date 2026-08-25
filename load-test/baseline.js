@@ -24,7 +24,7 @@ export const options = {
             timeUnit: '1s',
             duration: __ENV.DURATION || '5m',
             preAllocatedVUs: 50,                  // ★ 需要的 VU ≈ rate × 每次 iteration 耗時（Little's Law）
-            maxVUs: 200,                          // ★ 不夠時 k6 會補到這個上限；再不夠 → dropped_iterations
+            maxVUs: 300,                          // ★ 不夠時 k6 會補到這個上限；再不夠 → dropped_iterations
         },
     },
     thresholds: {

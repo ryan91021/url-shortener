@@ -239,3 +239,9 @@
 1. 🚨 **ECS 還沒縮容**：`desiredCount = 2`、`runningCount = 2`、兩個 target 都 `healthy` ⇒ **day33.md block 2.7 第一步（`--desired-count 0`）尚未執行，2 台仍在燒錢。**
 2. **`load-test/` 三個檔案還沒進版控**：`M load-test/baseline.js`、`?? results-100rps.json`、`?? results-500rps.json`。
 3. **`baseline.js` 註解還停留在 Day 32**（第 3 行寫「Day 32」；短碼陣列末尾還留著 `// …把 2.2 ③ 查出來的另外 7 個貼進來…` 這行已失效的 TODO）。
+
+## ⚠️ 尺的變更紀錄
+
+| 日期 | 改了什麼 | 為什麼 | 影響哪幾輪的可比性 |
+| --- | --- | --- | --- |
+| Day 35 | `maxVUs` 200 → 300 | Day 33 Run 2（`vus_max` 200、`dropped_iterations` 2,337）與 Day 34 cold（17,061、28.4%）**都撞到了 200 的天花板** ⇒ 舊尺**量不到 500 RPS**（實際只打出 491.7 / 178.6） | ⚠️ **500 RPS 與 250-cold 兩輪不可直接並排**（它們是「被舊尺限制住」的數字）。100 RPS（`vus_max` 76）與 250-warm（149）**不受影響**，因為它們沒碰到天花板 |
