@@ -67,3 +67,30 @@ resource "aws_cloudwatch_dashboard" "overview" {
     tg_suffix  = data.aws_lb_target_group.app.arn_suffix
   })
 }
+
+# ──────────────────────────────────────────────────────────────
+# Day 36 · 積壓告警（findings.md §7.4-(a) 的那個真正缺口）
+#   ★ widget ⑤ 從 Day 31 起就有 ApproximateAgeOfOldestMessage 這條線了 ——
+#     缺的不是「看得到」，是「會來找人」。圖表要人去看，告警會來找人。
+# ──────────────────────────────────────────────────────────────
+resource "aws_cloudwatch_metric_alarm" "click_queue_lagging" {
+  alarm_name        = "url-click-events-lagging"
+  alarm_description = "url-click-events 的最舊訊息年齡連續 3 分鐘 > 60 秒 = 消費端跟不上，非同步點擊分析正在變舊"
+
+  namespace   = "AWS/SQS"
+  metric_name = "ApproximateAgeOfOldestMessage"
+  dimensions = {
+    QueueName = aws_sqs_queue.click_events.name # ★ 參照，不硬貼名字
+  }
+
+  statistic           = "Maximum" # ★ 這是「水位」不是「計次」（同 dlq_not_empty 的理由）
+  period              = 60
+  evaluation_periods  = 3  # ★ 連續 3 分鐘才報 —— 壓測的短暫尖峰不該把人叫起來
+  threshold           = 60 # 60 秒（Day 34 warm 峰值 125 s、Day 33 Run 2 是 581 s ⇒ 兩次都會報）
+  comparison_operator = "GreaterThanThreshold"
+
+  treat_missing_data = "notBreaching" # ★★ 佇列空的時候 SQS 根本不推這個 metric → 沒資料【不算異常】
+
+  alarm_actions = [aws_sns_topic.ops_alerts.arn]
+  ok_actions    = [aws_sns_topic.ops_alerts.arn]
+}

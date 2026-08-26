@@ -47,7 +47,10 @@
 ### C · `TransactWriteItems`　★ 寫好，這一輪【不上】
 - **做法**：`lambda_function_v2.py` 已經實作
 - **為什麼不上**：
-  1. 它動到**冪等語義**——那是 Day 24 + Day 30 兩天才修好的東西，而 Week 8 **只有一輪驗證**。
+  1. 它動到**冪等語義**——那是 Day 24 + Day 30 兩天才修好的東西。
+     ⚠️ **Day 36 更正**：原文寫「Week 8 只有一輪驗證」，那是誤讀。index 的 Week 8 調整說明是
+     「本週**幾乎照原計畫**」，而日程本身就是兩輪（Day 36 優化 #1 / Day 38 優化 #2）。
+     ⇒ **C 的正確定位是「Day 38 的候選」，不是「被擱置」。** 它排在 D 後面的真正理由是第 2 條。
   2. ★★ **D 會把 C 的收益吃掉四分之三**：C 省的是「一次 client-side 往返」，
      而 D 讓所有 client-side 工作快 4 倍 ⇒ 做完 D 之後，C 能省的絕對毫秒數只剩 1/4。
      ⇒ **先做 D，再重新評估 C 值不值得那個風險。**
@@ -64,19 +67,34 @@
 - **現況**：ESM `43f3dd04-fc03-4561-95f3-e38694ab3223`，`BatchSize 10`、
   `MaximumBatchingWindowInSeconds 0`、`ReportBatchItemFailures`、`ScalingConfig null`（實測）
 
-## 2. Day 36 的執行順序
+## 2. 執行順序（★ Day 36 修正：把「部署」和「量測」拆成兩天）
 
-1. **先開 ECS 暖機**（Day 34 證明過：不暖機的那輪只跑得出 178.6 RPS、p95 差 517 倍）
-2. **改 D**（一行 CLI）→ 確認 `MemorySize = 512`
-3. **部署 B′**（`cp lambda_function_v2.py lambda_function.py` → `zip` → `update-function-code`）
-   ⚠️ **只把 `lambda_function.py` 打包進 zip**，不要 `zip function.zip *.py`
-   ⚠️ ★ **本輪先【拿掉 v2 裡的 TransactWriteItems】，只留 EMF**——C 不在這一輪
-4. **驗收 metric 還活著**（§4）——EMF 寫錯會靜默失敗
-5. **同一把尺重測**：`k6 run -e RATE=250 -e DURATION=4m --summary-export=load-test/results-250rps-opt.json`
-   ⚠️ **檔名不要覆蓋掉 `results-250rps.json`**（那是 before）
-6. **順手補 dashboard 的 ECS CPU Maximum**（Day 34 cold 那輪只看 Average 會誤判成有餘裕）
+> ⚠️ **本節在 Day 36 被改過。** 原版把「同一把尺重測」放在 Day 36，那是錯的：
+> index Day 36 的任務是「build/deploy + **準備好下一次 load test（保持條件一致）**」、
+> 驗收是「deploy 完成、服務正常、health check 綠」；index Day 37 才是「用**完全相同**的
+> script / RATE / duration **再跑一次**」。⇒ **原版會讓 before/after 的兩把尺條件不一致。**
 
-## 3. ★★ 為什麼 D 和 B′ 可以同一輪做，還能分別歸因
+### Day 36（部署日 · 不量測）
+1. **修法 D**：`--memory-size 512` → `wait function-updated` → 確認 `MemorySize = 512`
+2. **修法 B′**：把 `emit_emf()` **併回 `lambda_function.py`**（★ **不是** `cp lambda_function_v2.py`，
+   那會把 `TransactWriteItems` 一起帶上線）→ `zip` → `update-function-code` → `wait`
+3. **驗收**：`aws lambda invoke --log-type Tail` 一條指令同時看到
+   ① EMF 的那行 JSON ② `REPORT … Memory Size: 512 MB`
+4. **首航 `url-shortener-task:13`**（`:12` / `:13` 從沒跑過）：ECS 拉 1 台 → target healthy →
+   curl 幾發 → 確認整條非同步鏈通 → **縮回 0**
+5. **`terraform apply`**：widget ③ 補 ECS CPU `Maximum`、新增 `url-click-events-lagging` alarm
+   ⚠️ **先放寬 IAM policy `terraform-sns-cloudwatch-alerts`**，否則 apply 會在 alarm 上 AccessDenied
+
+### Day 37（量測日 · 條件必須跟 Day 34 warm 一模一樣）
+1. **先暖機**（Day 34 證明過：不暖機那輪只跑得出 178.6 RPS、p95 差 517 倍）
+2. **同一把尺**：`k6 run -e RATE=250 -e DURATION=4m --summary-export=load-test/results-250rps-opt.json`
+   ⚠️ 檔名**不要**覆蓋 `results-250rps.json`（那是 before）
+   ⚠️ **2 台**、**同 10 個短碼**、**同樣先暖機**——三個條件缺一不可
+3. **★ 再加一輪 500 RPS**（理由見 §7：250 RPS 那把尺**已經量不到新天花板**了）
+4. 寫 `load-test/iteration-1-results.md`（before/after 對照表 + 找 bottleneck #2）
+
+### Day 38（第二輪優化 · 見 §1 的 C）
+- `TransactWriteItems` 在這裡重新評估——**不是被永久擱置**（index Week 8 有兩輪優化）
 
 | 指標 | 涵蓋範圍 | D 會影響？ | B′ 會影響？ |
 | --- | --- | --- | --- |
@@ -123,3 +141,29 @@ aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Concur
 | index 情境 C · `lettuce.pool.max-active: 50` | `EngineCPUUtilization` 峰值 **1.27%**、`CurrConnections` **7**、`Evictions` **0**。Lettuce 的單一連線是**多工的** | 「只有一條」≠「不夠」 |
 | 擴 ECS（2 台 → 10 台）| 積壓的成因在**消費端**，不在生產端 ⇒ 加生產者只會讓佇列堆更快 | Lambda `ConcurrentExecutions` 每分鐘都是 **10.0** |
 | 提高 Lambda 帳號並發（修法 A）| **仍然是唯一能真正解決的**，但 `url-shortener-dev` 沒有 `servicequotas` 權限（實測 `AccessDenied`）⇒ 要用 root / Console 開 case。**已排入 Week 8** | `AccountLimit.ConcurrentExecutions = 10` |
+
+## 6. Day 36 執行紀錄（★ 事實，不是計畫）
+
+| 項目 | 結果 |
+| --- | --- |
+| 修法 D | `MemorySize` 128 → **512**，`LastModified` = ____ |
+| 修法 B′ | `lambda_function.py` 3 個 hunk；`CodeSize` 2,325 → ____ |
+| EMF 驗收 | 手動 invoke 看到 EMF JSON + `REPORT … Memory Size: 512 MB`；metric 在 ____ 秒後出現 |
+| 修法 C | **未部署**（`lambda_function_v2.py` 保留，標記為 Day 38 候選）|
+| `:13` 首航 | desired-count 送出 → target `healthy` 花了 **____ 分 ____ 秒**（★ Day 37 暖機要用）|
+| 煙霧測試 | 20 發 GET → 20 個 302；佇列排空；`Errors` = 0、`Throttles` = 0 |
+| Terraform | `state list` 15 → **16**；dashboard widget ③ 多一條 Maximum；新增 alarm `url-click-events-lagging` |
+| IAM | `terraform-sns-cloudwatch-alerts` 的 `CwAlarmAdmin` Resource 放寬成 `…:alarm:url-click-events-*` |
+| **今天沒做的** | **沒有跑那把 250 RPS 的尺**（見 §2 的 Day 37）、沒有 build image、沒有動 task definition、沒有改一行 Java |
+
+### ★★ 事前登記的預測（Day 37 拿這一頁對答案，不准事後改）
+
+| 指標 | Day 34 warm（before）| **Day 36 預測（after）** | 判定 |
+| --- | --- | --- | --- |
+| `ClickEventProcessingDuration` avg | **611.130 ms** | **190–358 ms** | ★★ **必須 ≤ 427.8 ms（−30%）**，否則「92% 是 CPU」這個假設就錯了 |
+| `Duration` avg | **674.311 ms** | **198–366 ms** | — |
+| 固定開銷（`Duration` − 上一列）| **63.181 ms** | **< 15 ms** | B′ 的效果 |
+| 消費能力 | **112.7 則/s** | **200–400 則/s** | — |
+| 端到端臨界流量 | **161 RPS** | **290–580 RPS** | — |
+| **250 RPS × 4 min 的 SQS 佇列峰值** | **13,980** | **≈ 0**（174.6 則/s ＜ 保守值 200）| ★★ **這一格是今天最大膽的預測** |
+| Lambda `ConcurrentExecutions` max | **10（貼死）**| **仍然貼死 10** | ★ 並發上限沒動，它不該變 |

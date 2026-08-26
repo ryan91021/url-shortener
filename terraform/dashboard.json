@@ -57,6 +57,7 @@
         "stat": "Average",
         "metrics": [
           ["AWS/ECS", "CPUUtilization",    "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "CPU %" }],
+          ["AWS/ECS", "CPUUtilization",    "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "stat": "Maximum", "label": "★ CPU % (max)" }],
           ["AWS/ECS", "MemoryUtilization", "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "Mem %" }],
           ["AWS/ECS", "LiveTaskCount",     "ClusterName", "url-shortener-cluster", "ServiceName", "url-shortener-service", { "label": "task 數", "yAxis": "right" }]
         ],

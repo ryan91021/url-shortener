@@ -33,7 +33,21 @@
 
 ## Week 8 backlog（★ 從 Day 35 的「10 項落後」搬過來，附不做的理由）
 
-〈把 2.1 那張表整個貼進來，含「今天不做，因為 ___」那一欄〉
+| # | 項目 | 出處 | 現況 | 決定 |
+| --- | --- | --- | --- | --- |
+| 1 | ALB / ElastiCache 納入 Terraform | Day 31 選做 B → 32 D → 35 | 未做（`state list` = 16，兩者都不在）| ⏸ **Week 8 之後**：import 至少 2–3 h；它們每月個位數美元，而 Week 8 天天要用、根本不會 destroy；**優化週動基礎設施＝給自己製造變數** |
+| 2 | dashboard 加 ElastiCache widget | Day 33 選做 B → 34 C → 35 | 未做 | ⏸ **Day 39**（畫圖表那天一起）：Redis 已被 Day 34 用 CLI 排除（`EngineCPUUtilization` 峰值 1.27%），不是阻礙 |
+| 3 | dashboard 補 ECS CPU 的 Maximum | findings §7.4-(c) | **✅ Day 36 完成** | — |
+| 4 | `ApproximateAgeOfOldestMessage` 的 alarm | findings §7.4-(a) | **✅ Day 36 完成**（`url-click-events-lagging`，連續 3 分鐘 > 60 s）| — |
+| 5 | `baseline.js` `maxVUs` 200 → 300 | Day 33 §5 → findings §9 | ✅ Day 35 完成 | — |
+| 6 | `scripts/post-100.sh` | Day 31 選做 C → 32 A → 33 E → 34 E → 35 | 未做（`BASE` 預設 localhost、沒帶 `X-API-Key`）| 🗑 **Day 40 直接刪掉**並在 README 註明「已由 `load-test/baseline.js` 取代」：連續五天沒人修＝它沒有使用者了 |
+| 7 | `ci.yml` 加 path filter | Day 32 選做 B → 33 C → 34 D → 35 | 未做 | ⏸ **Week 8 之後**：`paths-ignore` 會連 `test` job 一起跳過；要的是「跳過 deploy、保留 test」⇒ 得在 deploy job 的 `if:` 加條件。**沒想清楚不要做** |
+| 8 | 短碼搬到 `short-codes.json` | Day 32 選做 C → 33 D | 未做（`baseline.js:47-59` 硬寫 10 個）| ⏸ **Week 8 之後**：Week 8 **不會換短碼**（要保持條件一致），它的價值這週用不到 |
+| 9 | CI 加 `terraform fmt -check` + `validate` | Day 31 選做 D | 未做 | ⏸ **Day 40**：今天手動跑過了，自動化留到收官 |
+| 10 | `results-250rps-cold.json` 進 git | Day 34 收尾漏掉 | ✅ Day 35 完成 | — |
+| **11** | **收掉 Lambda 角色的 `cloudwatch:PutMetricData`** | **Day 36 新增（B′ 上線）** | 未做，**刻意** | ⏸ **Day 37 確認 EMF 穩定後**：現在收掉會讓 B′ 沒辦法 2 分鐘回滾 |
+| **12** | **`/aws/lambda/url-click-processor` 設保留期** | **Day 36 新增（見 (I)）** | 未做（`retention = None`、已存 19.3 MB）| ⏸ **Day 40**：`findings.md` §8「怎麼重現這份分析」依賴 Day 33/34 的 log，Week 8 期間不能砍 |
+| **13** | **`terraform-sns-cloudwatch-alerts` 這張 policy 沒有 IaC** | **Day 36 新增（見 §2.6）** | 手動管理，**刻意** | ✅ **保持現狀**：它是 Terraform 自己的執行憑證，交給 Terraform 管＝一次 destroy 就把自己鎖在門外。**寫進 README 即可** |
 
 ## ★★ 兩條英文履歷 bullet（Week 8 Day 38 直接用）
 

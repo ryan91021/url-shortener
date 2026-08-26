@@ -15,7 +15,34 @@ DEDUP_TTL_DAYS = 7                             # 去重記錄保留 7 天（TTL 
 dynamodb = boto3.resource("dynamodb", region_name=REGION)
 table = dynamodb.Table(TABLE_NAME)
 dedup_table = dynamodb.Table(DEDUP_TABLE_NAME)  # ★ 去重表
-cloudwatch = boto3.client("cloudwatch", region_name=REGION)
+
+
+def emit_emf(duration_ms):
+    """★ 修法 B′：用 EMF（Embedded Metric Format）取代 put_metric_data。
+
+    把一行結構化 JSON print 到 stdout，CloudWatch Logs 會自動把它抽成 metric，
+    【不需要任何 API 呼叫】⇒ 省掉 Day 34 量到的那 63.181 ms 固定開銷的主體。
+
+    ⚠️ 三個會【靜默失敗】的地方（卡點 9）：
+       1. 欄位名是 "Name"，不是 "MetricName"
+       2. Timestamp 的單位是【毫秒】，寫成秒會讓資料點掉到 1970 年
+       3. 函式的 LogFormat 必須是 Text；改成 JSON 會讓 runtime 把這行包進信封 ⇒ 抽不出來
+    ⚠️ 必須是【單獨一行】的 JSON —— print(json.dumps(...)) 剛好滿足。
+    """
+    print(json.dumps({
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),           # ★ 毫秒
+            "CloudWatchMetrics": [{
+                "Namespace": NAMESPACE,
+                "Dimensions": [[]],                          # ★ 空的維度集合＝無維度，跟現行 put_metric_data 一致
+                "Metrics": [{
+                    "Name": "ClickEventProcessingDuration",  # ★★ 是 Name
+                    "Unit": "Milliseconds",
+                }],
+            }],
+        },
+        "ClickEventProcessingDuration": duration_ms,         # ★ key 要跟上面的 Name 一模一樣
+    }))
 
 
 def lambda_handler(event, context):
@@ -75,14 +102,7 @@ def lambda_handler(event, context):
                     batch_item_failures.append({"itemIdentifier": message_id})
 
     duration_ms = (time.time() - start) * 1000.0
-    cloudwatch.put_metric_data(
-        Namespace=NAMESPACE,
-        MetricData=[{
-            "MetricName": "ClickEventProcessingDuration",
-            "Value": duration_ms,
-            "Unit": "Milliseconds",
-        }],
-    )
+    emit_emf(duration_ms)                        # ★ B′：零 API 呼叫
     print(f"processed={processed} skipped={skipped} failed={len(batch_item_failures)} in {duration_ms:.1f} ms")
     # ★ 回傳失敗清單；mapping 設 ReportBatchItemFailures 才會「只重投這些、其餘視為成功刪掉」
     return {"batchItemFailures": batch_item_failures}

@@ -353,7 +353,10 @@ W1S=2026-08-24T15:24:00Z ; W1E=2026-08-24T15:29:00Z    # 對齊到分鐘的比�
 - [ ] **★ 先做 B′**（把 `lambda_function.py:78` 的 `put_metric_data` 改成 EMF）——零代價、不用求人、預期 +10%，而且能**把「固定開銷是不是真的來自這一次 API 呼叫」這個假設一次驗掉**
 - [ ] **★ 專門跑一輪 160 RPS × 5 min**，卡住 §4 註 3 那個臨界點（預測：佇列深度峰值 < 500、年齡 < 10 s；若積壓 > 2,000 表示模型高估了消費能力）
 - [ ] **★ 修量測工具**：`load-test/baseline.js` 的 `maxVUs` 200 → **300**（Day 33 就寫了、Day 34 沒做、cold 那輪付了 17,061 筆 `dropped_iterations` 的代價）
-- [ ] **★ 修 dashboard 的三個缺口**（§7.4）：`ApproximateAgeOfOldestMessage` + alarm、ElastiCache、**ECS CPU 的 Maximum**
+- [x] **★ 修 dashboard 的缺口**（§7.4，**★ Day 36 更正並完成一半**）：
+      ~~`ApproximateAgeOfOldestMessage`~~ **widget 從 Day 31 就有了**（§7.4 的更正）⇒ 真正缺的是
+      **alarm**（✅ Day 36 建了 `url-click-events-lagging`）、**ECS CPU 的 Maximum**（✅ Day 36 補上）；
+      **ElastiCache widget 仍未做**（排 Day 39）
 - [ ] 開 support case 提高 Lambda 帳號並發 10 → 100（要用 root / Console，`url-shortener-dev` 沒有 `servicequotas` 權限）
 - [ ] Day 36：實作修法 B / C，**並且用同一把尺（250 RPS × 4 min，先暖機）重跑**，對答案的欄位是 `ClickEventProcessingDuration` avg 與 SQS 峰值深度
 - [ ] 解冷啟動（§3 ★）：deploy 後先打暖機流量再切 target group，或評估 AppCDS
