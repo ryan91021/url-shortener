@@ -90,11 +90,14 @@
 2. **同一把尺**：`k6 run -e RATE=250 -e DURATION=4m --summary-export=load-test/results-250rps-opt.json`
    ⚠️ 檔名**不要**覆蓋 `results-250rps.json`（那是 before）
    ⚠️ **2 台**、**同 10 個短碼**、**同樣先暖機**——三個條件缺一不可
-3. **★ 再加一輪 500 RPS**（理由見 §7：250 RPS 那把尺**已經量不到新天花板**了）
+3. **★ 再加一輪 500 RPS**（理由見 `iteration-1-results.md` §4 的「選尺推導」：
+   250 RPS 那把尺在優化後**已經量不到新天花板**了）
 4. 寫 `load-test/iteration-1-results.md`（before/after 對照表 + 找 bottleneck #2）
 
 ### Day 38（第二輪優化 · 見 §1 的 C）
 - `TransactWriteItems` 在這裡重新評估——**不是被永久擱置**（index Week 8 有兩輪優化）
+
+## 3. ★★ 為什麼 D 和 B′ 可以同一輪做，還能分別歸因
 
 | 指標 | 涵蓋範圍 | D 會影響？ | B′ 會影響？ |
 | --- | --- | --- | --- |
@@ -146,15 +149,17 @@ aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Concur
 
 | 項目 | 結果 |
 | --- | --- |
-| 修法 D | `MemorySize` 128 → **512**，`LastModified` = ____ |
-| 修法 B′ | `lambda_function.py` 3 個 hunk；`CodeSize` 2,325 → ____ |
-| EMF 驗收 | 手動 invoke 看到 EMF JSON + `REPORT … Memory Size: 512 MB`；metric 在 ____ 秒後出現 |
+| 修法 D | `MemorySize` 128 → **512**，`LastModified` = **2026-08-26T16:25:22Z** |
+| 修法 B′ | `lambda_function.py` 3 個 hunk；`CodeSize` 2,325 → **2,896** |
+| EMF 驗收 | 手動 invoke 看到 EMF JSON + `REPORT … Memory Size: 512 MB`；metric 出現在 **16:44Z**（手動）與 **17:10Z**（真流量，`SampleCount 20`）|
 | 修法 C | **未部署**（`lambda_function_v2.py` 保留，標記為 Day 38 候選）|
-| `:13` 首航 | desired-count 送出 → target `healthy` 花了 **____ 分 ____ 秒**（★ Day 37 暖機要用）|
+| `:13` 首航 | task `createdAt` 17:08:18Z → `startedAt` 17:09:03Z（**45.3 s**）→ 服務 steady **17:09:33Z（74.6 s）**；★ image pull 只花 **5.6 s** |
 | 煙霧測試 | 20 發 GET → 20 個 302；佇列排空；`Errors` = 0、`Throttles` = 0 |
-| Terraform | `state list` 15 → **16**；dashboard widget ③ 多一條 Maximum；新增 alarm `url-click-events-lagging` |
+| Terraform | `state list` 15 → **16**；dashboard widget ③ 多一條 Maximum（線上 `grep -c "CPU % (max)"` = 1）；新增 alarm `url-click-events-lagging`（State = **OK**）|
 | IAM | `terraform-sns-cloudwatch-alerts` 的 `CwAlarmAdmin` Resource 放寬成 `…:alarm:url-click-events-*` |
 | **今天沒做的** | **沒有跑那把 250 RPS 的尺**（見 §2 的 Day 37）、沒有 build image、沒有動 task definition、沒有改一行 Java |
+
+> 📌 上面的時間我用 UTC 寫（`17:08:18Z` ＝ 本機 `10:08:18 -07:00`）——★ **紀錄一律用 UTC**，因為所有 CloudWatch 查詢都是 UTC，混用時區是這種報告最常見的錯。
 
 ### ★★ 事前登記的預測（Day 37 拿這一頁對答案，不准事後改）
 
@@ -167,3 +172,61 @@ aws cloudwatch get-metric-statistics --namespace AWS/Lambda --metric-name Concur
 | 端到端臨界流量 | **161 RPS** | **290–580 RPS** | — |
 | **250 RPS × 4 min 的 SQS 佇列峰值** | **13,980** | **≈ 0**（174.6 則/s ＜ 保守值 200）| ★★ **這一格是今天最大膽的預測** |
 | Lambda `ConcurrentExecutions` max | **10（貼死）**| **仍然貼死 10** | ★ 並發上限沒動，它不該變 |
+
+### 6.1 ★★ 這張預測表本身的三個瑕疵（Day 37 對答案時發現，**上面那張表一個字都沒改**）
+
+> ★ 全文與實測數字見 `load-test/iteration-1-results.md` §3.1。這裡留一份結論，因為**瑕疵屬於預測表，不屬於結果報告**。
+
+1. **門檻寫在一個會被 batch 汙染的指標上。** `ClickEventProcessingDuration` 是**每次 invocation 的迴圈時間**，跟 batch 成正比；而優化成功的直接後果就是佇列變淺 ⇒ **batch 從 9.90 塌到 2.19**。⇒ 「≤ 427.8 ms」那條線會被**輕鬆通過，但理由是錯的**（實測 21.484 ms）。
+   ⇒ 正確的等價門檻是**每則成本 ≤ 43.1 ms**（`61.5675 × 0.7`），實測 **9.8146 ms**。★ 這正是 §7 規則 1 在跑之前就換掉的那個軸。
+
+2. **最後一列和第 6 列看起來自相矛盾，但真正的答案是【Maximum 和 Average 是兩個不同的統計量】。**
+
+   | | before（Day 34 warm）| after（Round 1）| after（Round 2）|
+   | --- | --- | --- | --- |
+   | `ConcurrentExecutions` **Maximum**（逐分鐘）| 10.0 | **10.0** | **10.0** |
+   | `ConcurrentExecutions` **Average**（逐分鐘）| 7.80 – 8.22 | **3.31 – 3.58** | **4.67 – 4.90** |
+
+   ⇒ **「還會碰到天花板」和「貼死在天花板」是兩件事。** §6 這一列在 **Maximum** 上是對的、在「貼死」上是錯的；**§7 規則 4 猜的「3–6」在 Maximum 上是錯的，卻剛好命中 Average。**
+   ⇒ **正確的判定指標是 Average**——帳號並發上限是天花板不是地板，而只有 Average 能告訴你離天花板多遠。
+
+3. **`Throttles` 的門檻寫成了絕對值，但它跟 batch 綁在一起。** batch 塌了 ⇒ invocation 次數 ×6.5（2,962 → 19,192）⇒ 被節流的機會 ×6.5。**絕對值 489 → 643（+31.5%）看起來變差，節流率 14.17% → 3.24%（−77%）才是真相。**
+
+> ★★ **三個瑕疵是同一個病**：**優化會改變指標的「組成」，所以門檻必須寫在一個對那個組成不變的量上。**
+> 🚨 **紀律：上面那張預測表沒有被回頭修改過一個字。** 事前登記的價值全部來自「它不能被改」——
+> **承認自己三天前寫錯了，跟偷偷改掉它，是兩件完全不同的事。**
+
+## 7. Day 37 的判定規則（★ 在跑第一發之前寫下來，寫完才准按 Enter）
+
+### 規則 1 · D 的效果（主要判定）
+    每則成本 = ClickEventProcessingDuration Sum ÷ 同窗 NumberOfMessagesReceived
+    before（Day 34 warm，batch 9.90）= 61.57 ms
+    ★★ 門檻：≤ 43.1 ms（= 61.57 × 0.7，事前登記的 −30% 換算到 batch 不變性的軸上）
+    ⚠️ 【不要】用 ClickEventProcessingDuration 的 Average 直接比 —— 它跟 batch 成正比，
+       而 batch 今天預期會從 9.9 塌到 ≈ 1（Day 36 煙霧測試實測 batch = 1.0）
+
+### 規則 2 · B′ 的效果
+    固定開銷 = Duration avg − ClickEventProcessingDuration avg
+    before = 63.181 ms   門檻 < 15 ms（事前登記）
+    ★ Day 36 煙霧測試已經量到 1.604 ms —— 今天是在真實流量下確認它
+
+### 規則 3 · 端到端
+    SQS ApproximateNumberOfMessagesVisible 峰值
+    before = 13,980   預測 ≈ 0
+    ⚠️ 若 > 2,000 ⇒ 消費能力沒到 174.6 則/s ⇒ 回頭看規則 1 是不是也沒過
+
+### 規則 4 · ★ 不要誤讀的那一格
+    ConcurrentExecutions max：預期 3–6，【不是 10】
+    ★ 並發上限是天花板不是地板。佇列 ≈ 0 ⟺ 消費端沒飽和 ⟺ 它一定 < 10。
+      §6 那張表的最後一列和第 6 列自相矛盾（詳見 §6.1）。
+
+### 規則 5 · 尺本身有沒有效（★ 每一輪都要先看這一條）
+    dropped_iterations ÷ iterations < 1%   且   vus_max < 300
+    ⚠️ 任一條不成立 ⇒ 那一輪量到的是【壓測端】的天花板，系統端數字只能當【下界】
+
+### ★★ Round 2（500 RPS）的三條分岔（跑之前就決定好）
+| 看到什麼 | 意義 | 下一步 |
+| --- | --- | --- |
+| 佇列峰值 > 5,000 且 `ConcurrentExecutions` max = 10 | ✅ 飽和了，量到新天花板 | 消費能力 = `NumberOfMessagesDeleted` 穩態平均；bottleneck #2 仍是並發上限，但被推遠了 |
+| 佇列 ≈ 0 且 `ConcurrentExecutions` max < 10 | ⚠️ 消費端仍未飽和 ⇒ 新天花板 > 500 RPS | bottleneck #2 **不在非同步鏈路上** ⇒ 去看 ECS CPU Maximum / `TargetResponseTime` / 壓測端；要量確切天花板 ⇒ 直接灌佇列（選做 A）|
+| `dropped_iterations` > 1% 或 `vus_max` 撞 300 | 🚨 量到的是壓測端天花板 | bottleneck #2 = **壓測基礎設施**（findings §9 早就寫了「搬到同 region EC2」）——**這也是一個誠實的結論** |

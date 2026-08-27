@@ -29,3 +29,5 @@ data/
 *.trace.db
 lambda/**/function.zip
 backup/
+__pycache__/
+*.pyc

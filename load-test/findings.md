@@ -16,6 +16,25 @@
 同樣 2 台、同樣的碼、同樣打 250 RPS：**冷的那輪只跑得出 178.6 RPS、CPU 五分鐘全程 100%、`TargetResponseTime` p95 = 3.238 s**；暖的那輪 **249.3 RPS、CPU 平均 32%、p95 = 0.00626 s**。**同一個系統，p95 差 517 倍。**
 ⇒ Day 33 寫的「CPU 不是瓶頸、還有一半餘裕」**只在暖機後成立**；這句話今天被自己的資料補上了但書。
 
+> ### ★ Day 37 更新（優化第一輪驗證完成 · 全文見 `load-test/iteration-1-results.md`）
+>
+> **① Bottleneck #1 沒有被「解決」，它被「推遠」了。**
+> 帳號並發上限**仍然是 10**（今天沒動、也沒開 support case），但每一分並發現在能處理 **6.3 倍**的訊息
+> （每則成本 **61.57 ms → 9.81 ms**，Lambda 128 → 512 MB + `put_metric_data` → EMF，Day 36 部署）。
+> ⇒ 非同步吞吐 **112.7 則/s → ≥ 323.1 則/s（≥ 2.87×，上界未量到）**，
+> 　 端到端臨界流量 **161 RPS → ≥ 462 RPS**。
+> ⇒ 同樣 250 RPS 下，SQS 積壓 **13,980 則 → 0 則**，最舊訊息年齡 **125 s → 4 s**。
+> ★ 判定要看 `ConcurrentExecutions` 的 **Average（8.0 → 3.4）**，不是 Maximum——Maximum 兩邊都還是 10
+> 　（突發時仍會摸到天花板，所以還有 643 次 `Throttles`；但**節流率 14.17% → 3.24%**）。
+>
+> **② 第 10 行那句「Bottleneck #2 = ECS CPU，但它只在冷啟動的頭 4 分鐘存在」——後半句被 Day 37 推翻。**
+> Round 2（500 RPS × 5 min、**完全暖機**、Round 1 之後 27 分鐘）：ECS CPU Average **94.97%**、Maximum **99.99%**、
+> `TargetResponseTime` p95 **830 ms** / p99 **1,471 ms**（伺服器端，不含太平洋 RTT）。
+> **機制已指認**：`AsyncConfig`（`core 2 / max 4 / queue 100 / CallerRunsPolicy`）在高到達率下溢位，
+> 把 SQS `SendMessage` 退回 Tomcat 請求執行緒——溢位率 Round 1 **0.32%** → Round 2 **27.75%**。
+> ⇒ **`CallerRunsPolicy` 從「冷啟動事故的放大器」升級成「穩態的 bottleneck #2」**（§7.1 的結論改一半，見該節）。
+> ⇒ 第 5 行「同步路徑在 500 RPS 下都還有一半以上的餘裕」**在今天的碼上已經不成立**。
+
 ---
 
 ## 1. 問題陳述
@@ -221,6 +240,19 @@ CloudWatch 實測 ConcurrentExecutions Average = 8.026                     ✅ �
 - ★★ **為什麼比原估更差**：§4 註 4 的四輪資料顯示**每則成本隨 batch 變大而上升**（50.0 → 61.6 ms，batch 1.41 → 9.9）。**省下的固定開銷可能被上升的每則成本吃掉。** ⇒ **這條不要外插，Day 36 實測才算數。**
 - ⚠️ 副作用：單次失敗的爆炸半徑從 10 則變成 100 則
 - ⚠️ **這個修法必須被 API 驗證**（BatchSize > 10 的規則）——Day 36 實作時會當場知道
+- 🚨🚨 **Day 37 更新：B 的價值在 B′ 之後可能歸零，甚至為負。**
+  ```
+  before B′：batch 1   => D = 50.046 + 63.181 = 113.2 ms => C = 8.026 / 0.1132  =  70.9 則/s
+             batch 9.9 => D = 674.311 ms               => C = 112.7 則/s   => 加大 batch 值 +59%
+  after D+B′：batch 2.19（Round 1 實測）=> D = 23.270 ms => 每則 9.8146 ms
+              batch 4.10（Round 2 實測）=> D = 44.324 ms => 每則 10.2844 ms
+  ⇒ 【batch 2.19 → 4.10 讓每則成本上升 4.8%，而固定開銷只從 1.786 省到 2.168 ——沒有省，反而多了】
+  ★ 原因：B 省的是「每次 invocation 的固定開銷」，而 B′ 已經把它從 63.18 壓到 1.79 ms
+    ——【沒有東西可以省了】，剩下的只有 §4 註 4 那條「每則成本隨 batch 上升」的代價。
+  ```
+  ⇒ **一句話：B′ 順手把 B 殺掉了。** 而且今天是**直接量到**的，不是推算——Round 1 和 Round 2 剛好
+  給了同一份程式碼在 batch 2.19 與 4.10 兩點的每則成本，**斜率是正的**。
+  ⚠️ 仍未量到 batch ≈ 10 @ 512 MB 的點（佇列不再積壓，撈不到滿的 batch）⇒ 外插到 100 仍屬推測。
 
 **★ B′（Day 34 新發現，比 B 便宜也比 B 確定）：把 handler 裡那一次 `put_metric_data` 拿掉**
 - 現況：`lambda_function.py:78` 每次 invocation 同步呼叫一次 `cloudwatch.put_metric_data`，而且它**在 `ClickEventProcessingDuration` 的計時之外**（`duration_ms` 在 line 77 就算完了）⇒ **它就是那 58–63 ms 固定開銷的主體**
@@ -286,6 +318,30 @@ filter @message like /published click event/
 - ALB 分流極均勻：warm 兩個 task 20,962 / 20,880（差 0.39%）；cold 15,124 / 15,032（差 0.61%）。
 - ⇒ **修 `AsyncConfig`（core 2 / max 4 / queue 100）不是穩態的優先事項**，但它是「冷啟動事故」的放大器。真正該修的是暖機（§3 ★）。
 
+> ### 🚨🚨 **Day 37 推翻上面這一行的後半段。**
+> 上表加上今天的兩輪：
+>
+> | 輪次 | 達成 RPS | ECS CPU max | `click-async-*` | Tomcat 執行緒（＝退回）|
+> | --- | --- | --- | --- | --- |
+> | **Day 37 Round 1** | **248.98** | **95.43%** | **41,874（99.68%）** | **136（0.32%）** |
+> | **Day 37 Round 2** | **464.39** | **99.99%** | **70,199（72.25%）** | **26,966（27.75%）** 🚨 |
+>
+> Round 2 **完全是熱的**（Round 1 之後 27 分鐘、之前還有 14,349 筆暖機），卻仍然溢位 **27.75%**。
+> ⇒ **「不是每秒丟幾個任務，而是每個任務要跑多久」這句話只對了一半**：到達率夠高時，**暖的系統也會溢位**。
+> ⇒ **真正的瓶頸是 `corePoolSize = 2`，不是 `maxPoolSize = 4`。** Java `ThreadPoolExecutor` 的規則是
+> 　 **佇列滿了才開新執行緒**，`queueCapacity = 100` 代表穩態下**只有 2 條執行緒在跑**：
+> ```
+> 每台每秒要送的 click event = ALB 3XX ÷ 300 s ÷ 2 台
+>    Round 1:  42,010 / 300 / 2 =  70.0 則/s/台  => 2 條執行緒每則要 ≤ 28.6 ms  ✅ 溢位 0.32%
+>    Round 2:  97,028 / 300 / 2 = 161.7 則/s/台  => 2 條執行緒每則要 ≤ 12.4 ms  ❌ 溢位 27.75%
+> ```
+> ⚠️ 而 `MetricPublisher` 也標了 `@Async("clickEventExecutor")` ⇒ **兩個生產者共用這 2 條執行緒。**
+> ⇒ **`AsyncConfig` 從「冷啟動的放大器」升級成 bottleneck #2 本身**，是 Day 38 的第一順位。
+> ★ 指紋：`TargetResponseTime` 變成雙峰 —— p50 **12.15 ms** / p95 **830.24 ms** / p99 **1,471.4 ms**。
+> 　 沒被退回的請求還是 12 ms；被退回的那 27.75% 要多扛一次跨網路 `SendMessage`。
+> ⚠️ **因果方向沒有被實驗分離**（CPU 飽和 ⇄ 池溢位 是正回饋迴路）⇒ Day 38 的分離實驗見
+> 　 `iteration-1-results.md` §5「下一步」。
+
 **2. cache stampede（快取擊穿）第二次被量到，而且這次連鎖到了 CPU**
 - Day 33 Run 2：只有 10 個 key，第一分鐘卻產生 **23 次** miss。
 - **Day 34 cold：166 次 miss**（Redis `CacheMisses` 與 `UrlShortener/CacheHit` 的 SampleCount−Sum 都是 **166**，兩邊一致），全部集中在 **14:53Z 那一分鐘**。
@@ -350,7 +406,13 @@ W1S=2026-08-24T15:24:00Z ; W1E=2026-08-24T15:29:00Z    # 對齊到分鐘的比�
 
 ## 9. Day 35 / Week 8 待辦（★ 由本文的結論倒推）
 
-- [ ] **★ 先做 B′**（把 `lambda_function.py:78` 的 `put_metric_data` 改成 EMF）——零代價、不用求人、預期 +10%，而且能**把「固定開銷是不是真的來自這一次 API 呼叫」這個假設一次驗掉**
+- [x] **★ 先做 B′**（把 `lambda_function.py:78` 的 `put_metric_data` 改成 EMF）——零代價、不用求人、預期 +10%，而且能**把「固定開銷是不是真的來自這一次 API 呼叫」這個假設一次驗掉**
+      ⇒ ✅ **Day 36 部署（commit `c9d8331`）、Day 37 驗證**：固定開銷 **63.18 → 1.79 ms（−97.2%）**，
+      假設**成立**（那 63 ms 的主體確實就是那一次 `put_metric_data`）。⚠️ 實際效果遠超「+10%」的原估，
+      因為原估只算了 B′、沒有把同一輪的 D（128 → 512 MB）算進去。見 `iteration-1-results.md` §2。
+- [ ] **★ 收掉 Lambda 角色的 `cloudwatch:PutMetricData`**（`week7-report.md` backlog #11：「Day 37 確認 EMF 穩定後」）
+      ⇒ ✅ **前置條件已滿足**：EMF 在真實流量下連跑兩輪、共 **42,850 次 invocation**、
+      `SampleCount` 19,192 + 23,655、`Errors` 0、metric 一次都沒斷 ⇒ **這條權限現在可以收了。**
 - [ ] **★ 專門跑一輪 160 RPS × 5 min**，卡住 §4 註 3 那個臨界點（預測：佇列深度峰值 < 500、年齡 < 10 s；若積壓 > 2,000 表示模型高估了消費能力）
 - [ ] **★ 修量測工具**：`load-test/baseline.js` 的 `maxVUs` 200 → **300**（Day 33 就寫了、Day 34 沒做、cold 那輪付了 17,061 筆 `dropped_iterations` 的代價）
 - [x] **★ 修 dashboard 的缺口**（§7.4，**★ Day 36 更正並完成一半**）：
@@ -358,7 +420,17 @@ W1S=2026-08-24T15:24:00Z ; W1E=2026-08-24T15:29:00Z    # 對齊到分鐘的比�
       **alarm**（✅ Day 36 建了 `url-click-events-lagging`）、**ECS CPU 的 Maximum**（✅ Day 36 補上）；
       **ElastiCache widget 仍未做**（排 Day 39）
 - [ ] 開 support case 提高 Lambda 帳號並發 10 → 100（要用 root / Console，`url-shortener-dev` 沒有 `servicequotas` 權限）
-- [ ] Day 36：實作修法 B / C，**並且用同一把尺（250 RPS × 4 min，先暖機）重跑**，對答案的欄位是 `ClickEventProcessingDuration` avg 與 SQS 峰值深度
+- [x] Day 36：實作修法 B / C，**並且用同一把尺（250 RPS × 4 min，先暖機）重跑**，對答案的欄位是 `ClickEventProcessingDuration` avg 與 SQS 峰值深度
+      ⇒ ✅ **Day 36 部署 D + B′（B 與 C 都沒上）、Day 37 同尺重測**。⚠️ **對答案的欄位選錯了**：
+      `ClickEventProcessingDuration` avg 跟 batch 成正比，而優化成功會讓 batch 從 9.90 塌到 2.19
+      ⇒ 正確的欄位是**每則成本**（`Sum ÷ NumberOfMessagesReceived`）。見 `iteration-1-results.md` §3.1。
+- [ ] **★★ Day 38 第一順位：`AsyncConfig` 的 `corePoolSize` 2 → 16**（或 `queueCapacity` 改小/改 `SynchronousQueue`），
+      重跑 500 RPS。⇒ 這是**能分離因果的實驗**：溢位掉到 ≈ 0 **且** CPU 明顯下降 ⇒ 池是主因。見 §7.1 的 Day 37 更新。
+- [ ] **查未驗證項**：同樣 250 RPS 下 ECS CPU 從 Day 34 的 39.91% 變成 Day 37 的 66.76%（×1.67），
+      而 `git diff -- shortener/` 是空的 ⇒ 比對 image `6f8ea8af…` 與 `c9d8331c…` 的 base layer digest
 - [ ] 解冷啟動（§3 ★）：deploy 後先打暖機流量再切 target group，或評估 AppCDS
 - [ ] Week 8：`generateShortCode()` 改用 `SecureRandom`（§7.3）；`GET /` 回 404 而不是 500（§7.7）
+      ⇒ 🚨 **§7.7 在 Day 37 Round 2 第一次於真實流量中發射**：`16:55:49–16:55:51Z` 共 **7 筆** ALB `HTTPCode_Target_5XX_Count`，
+      log 是 `NoResourceFoundException: No static resource .` 與 `… .well-known/security.txt.`
+      ⇒ **是網際網路掃描器**，不是壓測造成的（k6 `http_req_failed` = 0.00%）。**已經不是理論問題了。**
 - [ ] Week 8：壓測端搬到同 region EC2，消掉 **158 ms** 的量測偏差
