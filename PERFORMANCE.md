@@ -60,6 +60,9 @@ quota). Two independent methods agreed on the ceiling: back-calculating from pea
 
 ### 3.1 Hypothesis
 
+Both thresholds below were registered in `load-test/optimization-plan.md` §6 **before** the change
+was deployed, and that file has not been edited since (see Lessons Learned #4).
+
 **H1.** Of the 61.6 ms per-message cost, DynamoDB server-side time accounts for only 4.95 ms
 (PutItem 2.53 ms + UpdateItem 2.42 ms, from `SuccessfulRequestLatency`, which excludes network and
 client). The remaining **92% is client-side CPU** — and at 128 MB the function gets
