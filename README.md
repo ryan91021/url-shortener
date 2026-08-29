@@ -38,6 +38,16 @@ this would be replaced by **Amazon Cognito** or an **OAuth2 Resource Server** is
   its click counts (a classic IDOR). Fixing it requires a notion of "who owns this link".
 - The ALB listener is HTTP:80 (no TLS); production would terminate HTTPS with an ACM certificate.
 
+## Performance
+
+Load-tested with k6 (open model, 70% redirect / 30% create). One optimisation round is documented
+end to end in **[PERFORMANCE.md](PERFORMANCE.md)** — methodology, baseline, hypothesis,
+falsifiable thresholds, result, and a Little's Law analysis of both bottlenecks.
+
+Headline: at the same 250 RPS the asynchronous consumer's **per-message cost fell 61.6 ms -> 9.8 ms
+(-84%)** and the **SQS backlog went from 13,980 messages (125 s behind) to zero** — while the
+client-side percentiles barely moved, because the change was on the asynchronous path.
+
 ## CI
 GitHub Actions runs `./mvnw -B test` on every push to `main`. The suite is designed to pass with
 **no AWS credentials and no Redis**; tests that need real infrastructure are named `*IT` and are

@@ -257,7 +257,11 @@ org.springframework.web.servlet.resource.NoResourceFoundException: No static res
 2. **因果方向沒有被實驗分離。** 「CPU 飽和 ⇒ `SendMessage` 變慢 ⇒ 池溢位」和「池溢位 ⇒ 請求執行緒做網路 I/O ⇒ CPU 飽和」是一個**正回饋迴路**（`findings.md` §7.1 已描述），**兩輪觀測資料無法分辨誰先動**。
 3. **非同步鏈路的真天花板沒有量到**（同步路徑先垮）。只知道 `C ≥ 323.1 則/s`（≥ 2.87× before）。
 
-**下一步（Day 38）**：
+> ⚠️ **Day 38 更正**：本節原寫「下一步（Day 38）」。實際上 index 的 Week 8 調整說明是
+> 「**只做一輪優化驗證（第二輪 + CDF 圖表在選做清單）**」⇒ 下面四條是**候選清單**，
+> 執行時機是 Week 8 之後的鞏固期或 P2 選做，**不是 Day 38 的排定任務**。
+
+**下一步（★ 第二輪優化在 index 的 P2 選做清單，不是排定任務——見 `plan/week8/day38.md` (B)）**：
 
 1. **★★ 第一順位：把 `AsyncConfig` 的 `corePoolSize` 2 → 16（或 `queueCapacity` 100 → 0 改用 `SynchronousQueue`），重跑 500 RPS。**
    ⇒ **這是一個能分離因果的實驗**：若溢位掉到 ≈ 0 **且** CPU 明顯下降 ⇒ 池是主因；若 CPU 仍然 95% ⇒ 主因在別處（回去查未驗證 #1）。
