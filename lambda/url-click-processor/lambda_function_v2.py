@@ -1,14 +1,23 @@
 # ─────────────────────────────────────────────────────────────
-# ★★ 這個檔案【沒有被部署】，而且今天（Day 36）也不會被部署。
+# ★★ 這個檔案【沒有被部署】，而且【不在任何一天的排定任務裡】。
 #
-#   它是【修法 C · TransactWriteItems】的候選實作，定位是 Day 38 的第二輪優化。
-#   Day 36 這一輪只上了 D（記憶體 128→512）與 B′（EMF），兩者都已經合併進
+#   它是【修法 C · TransactWriteItems】的候選實作。
+#   Day 36 那一輪只上了 D（記憶體 128→512）與 B′（EMF），兩者都已經合併進
 #   lambda_function.py —— 也就是說，本檔和線上版本的【唯一差異就是 C】。
+#
+#   ⚠️ Day 39 更正：本檔原本寫「定位是 Day 38 的第二輪優化」。那是錯的——
+#      index（減載版）的 Week 8 調整說明是「只做【一輪】優化驗證（第二輪 + CDF 圖表
+#      在選做清單）」⇒ 第二輪優化在【P2 選做清單】，不是排定任務。
+#      執行時機是 8 月鞏固期，或拿到面試邀請之後。見 plan/week8/day38.md (B)。
 #
 #   ⚠️ 打包時絕對不要用 `zip function.zip *.py`，那會把這個檔一起送上去。
 #      正確：cd lambda/url-click-processor && zip function.zip lambda_function.py
 #
-#   Day 38 評估 C 的時候要重新回答的問題：
+#   ★ 為什麼留著它而不是刪掉：PERFORMANCE.md §3.2 明寫「Not deployed:
+#     TransactWriteItems (touches idempotency semantics)」、§5 Future Work 也指向它。
+#     一份被報告點名的候選實作，刪掉會讓那句話變成空話。
+#
+#   評估 C 之前要重新回答的問題：
 #     · D 把 client-side 工作加速了幾倍？C 能省的絕對毫秒數還剩多少？
 #     · 交易寫入的 WCU 是普通寫入的 2×（Day 34 warm 窗 58,551 → 117,102）——值嗎？
 #     · 它會讓 Day 30 的補償刪除整段消失（那是加分，不是扣分）

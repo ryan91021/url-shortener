@@ -36,18 +36,32 @@
 | # | 項目 | 出處 | 現況 | 決定 |
 | --- | --- | --- | --- | --- |
 | 1 | ALB / ElastiCache 納入 Terraform | Day 31 選做 B → 32 D → 35 | 未做（`state list` = 16，兩者都不在）| ⏸ **Week 8 之後**：import 至少 2–3 h；它們每月個位數美元，而 Week 8 天天要用、根本不會 destroy；**優化週動基礎設施＝給自己製造變數** |
-| 2 | dashboard 加 ElastiCache widget | Day 33 選做 B → 34 C → 35 | 未做 | ⏸ **Day 39**（畫圖表那天一起）：Redis 已被 Day 34 用 CLI 排除（`EngineCPUUtilization` 峰值 1.27%），不是阻礙 |
+| 2 | dashboard 加 ElastiCache widget | Day 33 選做 B → 34 C → 35 | 未做 | ⏸ **Day 40**（★ Day 39 改判，見表下註記）：跟重建 demo 用的那次 `terraform apply` 一起做。Redis 已被 Day 34 用 CLI 排除（`EngineCPUUtilization` 峰值 1.27%），不是阻礙 |
 | 3 | dashboard 補 ECS CPU 的 Maximum | findings §7.4-(c) | **✅ Day 36 完成** | — |
 | 4 | `ApproximateAgeOfOldestMessage` 的 alarm | findings §7.4-(a) | **✅ Day 36 完成**（`url-click-events-lagging`，連續 3 分鐘 > 60 s）| — |
 | 5 | `baseline.js` `maxVUs` 200 → 300 | Day 33 §5 → findings §9 | ✅ Day 35 完成 | — |
-| 6 | `scripts/post-100.sh` | Day 31 選做 C → 32 A → 33 E → 34 E → 35 | 未做（`BASE` 預設 localhost、沒帶 `X-API-Key`）| 🗑 **Day 40 直接刪掉**並在 README 註明「已由 `load-test/baseline.js` 取代」：連續五天沒人修＝它沒有使用者了 |
+| 6 | `scripts/post-100.sh` | Day 31 選做 C → 32 A → 33 E → 34 E → 35 | **✅ Day 39 刪除**（`git rm`）| 🗑 **已完成**（★ Day 39 改判，原排 Day 40）：三個死因——① `BASE` 預設 `localhost:8080`，打不到 ALB；② 沒帶 `X-API-Key` ⇒ `ApiKeyFilter` 全數回 401；③ 功能已被 `load-test/baseline.js` 的 30% POST 完全取代（open model、per-tag threshold、JSON 匯出）|
 | 7 | `ci.yml` 加 path filter | Day 32 選做 B → 33 C → 34 D → 35 | 未做 | ⏸ **Week 8 之後**：`paths-ignore` 會連 `test` job 一起跳過；要的是「跳過 deploy、保留 test」⇒ 得在 deploy job 的 `if:` 加條件。**沒想清楚不要做** |
 | 8 | 短碼搬到 `short-codes.json` | Day 32 選做 C → 33 D | 未做（`baseline.js:47-59` 硬寫 10 個）| ⏸ **Week 8 之後**：Week 8 **不會換短碼**（要保持條件一致），它的價值這週用不到 |
-| 9 | CI 加 `terraform fmt -check` + `validate` | Day 31 選做 D | 未做 | ⏸ **Day 40**：今天手動跑過了，自動化留到收官 |
+| 9 | CI 加 `terraform fmt -check` + `validate` | Day 31 選做 D | 未做 | ⏸ **Day 40**（★ Day 39 重新確認，維持不變）：它是 `ci.yml` 的改動，而 Day 39 的原則是「不動 CI、不動基礎設施」。今天手動跑過了（`terraform plan` = No changes），自動化留到收官 |
 | 10 | `results-250rps-cold.json` 進 git | Day 34 收尾漏掉 | ✅ Day 35 完成 | — |
 | **11** | **收掉 Lambda 角色的 `cloudwatch:PutMetricData`** | **Day 36 新增（B′ 上線）** | 未做，**刻意** | ⏸ **Day 37 確認 EMF 穩定後**：現在收掉會讓 B′ 沒辦法 2 分鐘回滾 |
 | **12** | **`/aws/lambda/url-click-processor` 設保留期** | **Day 36 新增（見 (I)）** | 未做（`retention = None`、已存 19.3 MB）| ⏸ **Day 40**：`findings.md` §8「怎麼重現這份分析」依賴 Day 33/34 的 log，Week 8 期間不能砍 |
 | **13** | **`terraform-sns-cloudwatch-alerts` 這張 policy 沒有 IaC** | **Day 36 新增（見 §2.6）** | 手動管理，**刻意** | ✅ **保持現狀**：它是 Terraform 自己的執行憑證，交給 Terraform 管＝一次 destroy 就把自己鎖在門外。**寫進 README 即可** |
+
+> ⚠️ **Day 39 更正：#2 / #6 / #9 的執行日期是照【舊版 index】的行程排的。**
+> `plan/` 底下有兩份 index，內容不同：
+> ```
+> plan/replication/index 2.html （舊版）  Day 39 = 最終 load test + CDF 圖表 ／ Day 40 = 撰寫 PERFORMANCE.md
+> plan/project.html            （減載版・現行）Day 38 = PERFORMANCE.md ／ Day 39 = 履歷初稿 + repo 大掃除 ／ Day 40 = demo 演練 + 收官
+> ```
+> ⇒ **#6**（刪 `post-100.sh`）原判「Day 40」＝舊版的收官日；**新版 Day 39 就是 repo 大掃除，這是它的家** ⇒ **提前到 Day 39 執行（✅ 已完成）**。
+> ⇒ **#2**（ElastiCache widget）原判「Day 39（畫圖表那天一起）」——**而新版 Day 39 不是畫圖表那天**（CDF 圖表在 P2 選做清單）
+> 　 ⇒ **移到 Day 40**，跟重建 demo 用的那次 `terraform apply` 同一次做。
+> ⇒ **#9**（CI 加 `terraform fmt`）**維持 Day 40**：它是 CI 改動，跟 Day 39「不動 CI」的原則衝突。
+>
+> ★★ **為什麼這一格值得改**：**一份 backlog 如果它的日期是照一個已經不存在的行程排的，它就會【剛好在該做的那天沒有人打開它】。**
+> 　 這正是 Day 37 Block 3 那張 toil 表裡「**沒有持久價值**」那一欄在講的事——**待辦事項的失敗方式不是報錯，是安靜地在錯誤的那一天被跳過。**
 
 ## ★★ 兩條英文履歷 bullet（Week 8 Day 38 直接用）
 
