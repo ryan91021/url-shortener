@@ -87,6 +87,57 @@ this would be replaced by **Amazon Cognito** or an **OAuth2 Resource Server** is
   its click counts (a classic IDOR). Fixing it requires a notion of "who owns this link".
 - The ALB listener is HTTP:80 (no TLS); production would terminate HTTPS with an ACM certificate.
 
+## Bring-up (from a cold, scaled-to-zero environment)
+
+This project is normally parked at `desiredCount = 0`: the data plane (DynamoDB, SQS, the secret,
+the alarms) and the ALB stay up, and only the compute is switched off. Bringing it back:
+
+```bash
+export AWS_REGION=ap-east-2
+aws ecs update-service --cluster url-shortener-cluster --service url-shortener-service \
+  --task-definition url-shortener-task:18 --desired-count 2
+
+TG=$(aws elbv2 describe-target-groups --names url-shortener-tg \
+       --query 'TargetGroups[0].TargetGroupArn' --output text)
+aws elbv2 describe-target-health --target-group-arn "$TG" \
+  --query 'TargetHealthDescriptions[*].TargetHealth.State' --output text   # wait for 2 x healthy
+```
+
+**Measured 2026-08-31: about 95 s from `update-service` to two healthy targets.** That figure is
+reconstructed from ECS service events rather than read off a stopwatch — ECS logged *started 2
+tasks* at 16:33:44, *registered 2 targets* at 16:34:20, and *reached a steady state* at 16:34:57
+(PDT), with the API call going out shortly before the first of those.
+
+The floor is set by the health check, not by the app: `HealthyThreshold 2` x `Interval 30 s` = 60 s
+of passing checks before a target is in service, on top of Fargate pulling a 153 MB image and the
+JVM starting. So ~95 s is close to the practical minimum for this shape of service, and it is the
+number to budget against when someone asks for a live demo.
+
+**Not covered by this path** (and deliberately so):
+* The compute plane — ALB, ECS service/cluster, ElastiCache, the Lambda, ECR — is **not** in
+  Terraform. Importing it is a few hours of work and is tracked as backlog item #1. `terraform plan`
+  on this repo reports *No changes* even with the service scaled to zero, because the service is not
+  something it manages.
+* 🚨 `terraform destroy` would drop `UrlMappings` (~152k items) and `ClickAnalytics`; neither table
+  has deletion protection. The Terraform here is for *drift detection and re-creation of the data
+  plane*, **not** for a routine teardown/rebuild cycle. Teardown is the one-line command below, and
+  nothing about a cold environment ever requires `terraform destroy`.
+
+Teardown is one command: `aws ecs update-service --cluster url-shortener-cluster \
+--service url-shortener-service --desired-count 0` — then confirm `runningCount` actually reaches 0
+rather than assuming it did.
+
+**Idle cost note.** The ALB and the ElastiCache node (`url-shortener-redis`, `cache.t4g.micro`) stay
+up between demos (~$__/month) — a deliberate trade against a 30–60 minute rebuild that has never
+been rehearsed: recreating the cache means a new cluster, a new `SPRING_DATA_REDIS_HOST` in the task
+definition, and a new revision, and the ECS deployment circuit breaker is disabled. Taken while
+applications are out. **Reassess if no interview has materialised by 2026-11-01.**
+
+ECR keeps only the 10 most recent images (lifecycle policy, applied 2026-08-31); CI tags by commit
+SHA, so without it they accumulate forever. Ten is chosen to keep `c9d8331` — task definition `:14`,
+the build measured in [PERFORMANCE.md](PERFORMANCE.md) round 1 — rather than the tighter 5, which
+would have expired it at the very next push.
+
 ## Demo (against a running deployment)
 
 ```bash
@@ -102,14 +153,16 @@ CODE=$(curl -s -X POST "http://$ALB/api/v1/shorten" \
   -d '{"longUrl":"https://example.com/demo"}' | jq -r .shortCode)
 
 # 2. redirect -> 302  (public, no key needed)
-curl -sI "http://$ALB/api/v1/$CODE" | head -1        # HTTP/1.1 302 Found
+curl -sI "http://$ALB/api/v1/$CODE" | head -1               # HTTP/1.1 302 Found
+curl -sI "http://$ALB/api/v1/$CODE" | grep -i '^location:'  # Location: https://example.com/demo
 
 # 3. redirect again -> Redis cache hit (see UrlShortener/CacheHit in CloudWatch)
 curl -sI "http://$ALB/api/v1/$CODE" > /dev/null
 
-# 4. analytics -> the two clicks arrive via SQS + Lambda, a few seconds behind
-sleep 10 && curl -s "http://$ALB/api/v1/analytics/$CODE" | jq
-#    { "2026-08-29": 2 }
+# 4. analytics -> the three clicks arrive via SQS + Lambda, a few seconds behind
+sleep 15 && curl -s "http://$ALB/api/v1/analytics/$CODE" | jq
+#    { "2026-08-31": 3 }    <- last actually run 2026-08-31 (shortCode 1hw1aat);
+#                              CacheHit summed to 2 over the same window: 1 miss + 2 hits
 ```
 
 The `sleep` in step 4 is the point, not an inconvenience: click aggregation is asynchronous, so

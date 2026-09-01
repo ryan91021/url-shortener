@@ -74,11 +74,42 @@
    and backed up 65,090 messages in SQS.**
 
 2. **Built a quantitative model of the async consumer using Little's Law (L = λ × W) that
-   predicted queue backlog within 1–6% across a 5× traffic range (100 / 178 / 249 / 492 RPS),
+   predicted queue backlog within 14% across a 5× traffic range (100 / 178 / 249 / 492 RPS),
    then used per-operation CloudWatch metrics to show 92% of per-message cost was client-side
    CPU on an under-provisioned 128 MB Lambda — a one-line, instantly reversible fix.**
+
+> ⚠️ **Day 40 更正**：本條原寫「within 1–6%」。`findings.md` §4 的四個點是
+> ✅ / −13.8% / +5.5% / +3.9% ⇒ **正確講法是「within 14%」**。
+> ★ §4 註 1 自己解釋了為什麼 cold 那一格最差（離臨界點（161 RPS）只有 17 RPS，模型是兩個相近的大數相減），
+> 　 而**它的絕對誤差 490 則反而是四個點裡最小的**。
+> ⇒ **講「我知道我的模型在哪個區間最不準，而且知道為什麼」比講「誤差 1–6%」強**，而且後者經不起對方翻開 §4。
 
 > ★ 第 1 條賣的是「**我發現了量測工具看不見的東西**」。
 > ★ 第 2 條賣的是「**我的結論是可以預測未來的模型，不是一次性的觀察**」。
 > ⚠️ 兩條都刻意**沒有**寫「提升了 N%」——因為那個數字要到 Day 37 重測完才會有。
 > **不要提前寫還沒量到的數字。**
+
+---
+
+## Week 8 收官（Day 36–40）
+
+| Day | 產出 | 一句話 |
+| --- | --- | --- |
+| 36 | commit `c9d8331` | 部署 D（Lambda 128→512 MB）+ B′（`put_metric_data` → EMF）|
+| 37 | `iteration-1-results.md` + 2 個 `*-opt.json` | 同一把尺重測，並找到 bottleneck #2（`AsyncConfig` 執行緒池）|
+| 38 | `PERFORMANCE.md`（244 行 · 5 節）| 把三天的實驗記錄翻譯成一份【讀者不是我】的報告 |
+| 39 | `story/resume-bullets.md`（7 條）+ README 終版 + repo 大掃除 | 把 244 行壓成 7 行 |
+| 40 | Bring-up 實測 + teardown + 鞏固期計畫 | 證明它是真的、證明我會收、寫下接下來四週 |
+
+**★ Week 8 學到最貴的一課**：**一份 backlog 如果它的日期是照一個已經不存在的行程排的，
+它就會剛好在該做的那天沒有人打開它。**（Day 39 發現 `plan/` 底下有兩份 index，
+而 `day36.md` / `day37.md` 是照舊版寫的。）
+
+**★★ 第二課（Day 40 補記）**：Day 37 把「把 CloudWatch 數字手抄進 markdown」評為最嚴重的 toil，
+而 Day 40 發現 **Day 33 的 ECS log 已經被 7 天保留期刪掉了** —— **那份手抄救了資料。**
+⇒ **那件事該被自動化，但在自動化之前，做它比不做好。**
+
+**★★★ 第三課（Day 40 現場補記）**：`week7-report` backlog #2（dashboard 加 ElastiCache widget）
+排在 Day 40，理由是「跟重建 demo 用的那次 `terraform apply` 一起做」——**而 Day 40 當天 `terraform plan`
+是 `No changes`，那次 apply 根本不存在。** ⇒ 一條待辦如果它的執行條件是**假設出來的**，
+它不會報錯，只會一路被延到理由本身失效為止。**#2 移到鞏固期第 1 週，並且不再綁任何一次 apply。**
